@@ -1,30 +1,82 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:rocket_phone_ai_test/core/network/mock_contacts_interceptor.dart';
+import 'package:rocket_phone_ai_test/features/contacts/domain/entities/contact_entity.dart';
+import 'package:rocket_phone_ai_test/features/contacts/domain/entities/contacts_page_entity.dart';
+import 'package:rocket_phone_ai_test/features/contacts/domain/usecases/get_contacts_usecase.dart';
+import 'package:rocket_phone_ai_test/features/contacts/presentation/components/contact_list_item.dart';
+import 'package:rocket_phone_ai_test/features/contacts/presentation/components/contact_search_bar.dart';
+import 'package:rocket_phone_ai_test/features/contacts/presentation/providers/contacts_notifier.dart';
+import 'package:rocket_phone_ai_test/features/contacts/presentation/providers/contacts_providers.dart';
+import 'package:rocket_phone_ai_test/features/contacts/presentation/screens/contacts_screen.dart';
 
-import 'package:rocket_phone_ai_test/main.dart';
+class MockGetContactsUseCase extends Mock implements GetContactsUseCase {}
+
+class MockMockContactsInterceptor extends Mock
+    implements MockContactsInterceptor {}
+
+class FakeGetContactsParams extends Fake implements GetContactsParams {}
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  setUpAll(() {
+    registerFallbackValue(FakeGetContactsParams());
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  late MockGetContactsUseCase mockUseCase;
+  late MockMockContactsInterceptor mockInterceptor;
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  setUp(() {
+    mockUseCase = MockGetContactsUseCase();
+    mockInterceptor = MockMockContactsInterceptor();
+  });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  const testContacts = [
+    ContactEntity(id: '1', name: 'Alexander Smith', phone: '+421901234567'),
+    ContactEntity(id: '2', name: 'Anna Petrova', phone: '+421903456789'),
+  ];
+
+  const testPage = ContactsPageEntity(
+    contacts: testContacts,
+    page: 1,
+    limit: 10,
+    total: 2,
+    hasMore: false,
+  );
+
+  testWidgets(
+      'Renders ContactsScreen, search bar, and displays contacts once loaded',
+      (tester) async {
+    when(() => mockUseCase.execute(any())).thenAnswer((_) async => testPage);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          contactsProvider.overrideWith(
+            () => ContactsNotifier(
+              getContactsUseCase: mockUseCase,
+              mockInterceptor: mockInterceptor,
+            ),
+          ),
+        ],
+        child: const MaterialApp(
+          home: ContactsScreen(),
+        ),
+      ),
+    );
+
+    // Initial frame
+    expect(find.text('Contacts'), findsOneWidget);
+    expect(find.byType(ContactSearchBar), findsOneWidget);
+
+    // Process asynchronous post-frame and Future resolution
+    await tester.pumpAndSettle();
+
+    // Verify contact items are rendered
+    expect(find.byType(ContactListItem), findsNWidgets(2));
+    expect(find.text('Alexander Smith'), findsOneWidget);
+    expect(find.text('+421901234567'), findsOneWidget);
+    expect(find.text('Anna Petrova'), findsOneWidget);
   });
 }
